@@ -23,11 +23,28 @@ public static class SharePointJson
         return response;
     }
 
-    private static Task<HttpResponseMessage> SendAsync(HttpClient client, Uri uri, string accept, CancellationToken cancellationToken)
+    private const int MaxRetries = 4;
+
+    // Retries 429/503 with Retry-After (or exponential backoff) so rate-limited sites don't fail the load.
+    private static async Task<HttpResponseMessage> SendAsync(HttpClient client, Uri uri, string accept, CancellationToken cancellationToken)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.Accept.ParseAdd(accept);
-        return client.SendAsync(request, cancellationToken);
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Accept.ParseAdd(accept);
+            var response = await client.SendAsync(request, cancellationToken);
+            if (attempt >= MaxRetries
+                || response.StatusCode is not (System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.ServiceUnavailable))
+            {
+                return response;
+            }
+
+            var delay = response.Headers.RetryAfter?.Delta
+                ?? TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+            if (delay > TimeSpan.FromSeconds(30)) delay = TimeSpan.FromSeconds(30);
+            response.Dispose();
+            await Task.Delay(delay, cancellationToken);
+        }
     }
 
     /// <summary>Returns the object itself for the verbose "d" wrapper, otherwise the root.</summary>

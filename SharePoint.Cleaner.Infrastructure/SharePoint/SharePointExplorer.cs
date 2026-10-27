@@ -130,7 +130,7 @@ public sealed class SharePointExplorer : ISharePointExplorer
 
     private sealed class TreeState
     {
-        public SemaphoreSlim Throttle { get; } = new(8);
+        public SemaphoreSlim Throttle { get; } = new(3);
         public volatile bool WebsUnavailable;
     }
 
